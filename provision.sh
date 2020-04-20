@@ -1,0 +1,1 @@
+ansible-playbook -i {{IP}}, -e "ansible_user=terraform ansible_ssh_pass=terraform ansible_sudo_pass=terraform ansible_ssh_common_args='-o StrictHostKeyChecking=no'" playbook.yml

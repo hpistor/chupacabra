@@ -1,0 +1,20 @@
+[
+    (
+        [],
+        [
+            (
+                [middle],
+                'goal-vuln',
+                [goal]
+            ),
+            (
+                [start],
+                'middle-vuln',
+                [middle]
+            ),
+            (
+                [],
+                'ip-whitelist01',
+                []
+            )
+                ,([middle],'goal-vuln',[goal]),([],'ip-whitelist01',[]),([],'ip-whitelist01',[])])]

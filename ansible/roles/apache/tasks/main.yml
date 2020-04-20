@@ -1,0 +1,17 @@
+---
+- name: Update apt
+  become: true
+  apt: update_cache=yes
+
+- name: Install apache 
+  become: true
+  apt: name=apache2 state=present
+  notify: 
+    - start apache2
+
+- name: Install apache modules
+  become: true
+  apt: pkg={{apache.modules}} state=present
+  notify:
+    - restart apache2
+

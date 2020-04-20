@@ -1,0 +1,16 @@
+/ansible/playbook.yml
+*.gv
+*.png
+*[0-9]
+.vagrant
+/.metadata/
+*.properties
+*production.properties
+prolog/httpd.log
+.*.swp
+ranges/
+terraform.auto.tfvars
+.ipynb_checkpoints/
+.vscode
+venv
+__pycache__
