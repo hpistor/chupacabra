@@ -1,0 +1,28 @@
+---
+# - name: Update apt
+#   become: true
+#   apt:
+#     upgrade: yes
+#     update_cache: yes
+
+- name: Install docker
+  become: true
+  apt:
+    pkg:
+      - docker.io
+
+- name: create bad file directory
+  file:
+    path: /root/bad_page
+    state: directory
+    mode: '0755'
+      
+- name: Upload bad files
+  become: true
+  copy:
+    src: "index.php"
+    dest: "/root/bad_page/index.php"
+
+- name: run docker
+  become: true
+  shell: "docker run -p 8080:80 -p 8888:88 -v /root/bad_page:/var/www/html --name lemp -d adhocore/lemp:7.4"

@@ -18,3 +18,10 @@
   notify:
   - restart vsftpd
 
+- name: Enable FTP port
+  ufw:
+    rule: allow
+    port: '21'
+  notify:
+  - restart ufw
+

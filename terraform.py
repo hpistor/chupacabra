@@ -88,10 +88,11 @@ class Machine(threading.Thread):
         # if self.method == "destroy":
         #     self.destroy()
 
-    def setup(self, machine_ip_connection_list, connections, ip_addr):
+    def setup(self, machine_ip_connection_list, connections, ip_addr, max_node):
         self.whitelisted_machines = connections
         self.machine_ip_connection_list = machine_ip_connection_list
         self.host_ip = ip_addr
+        self.max_node = max_node
         self.start()
 
     def write_provisioning_script(self):
@@ -118,9 +119,10 @@ class Machine(threading.Thread):
         data[0]['vars']['ufw'] = dict()
         data[0]['vars']['ufw']['ips'] = connections_to_ips
         if not 'ufw' in data[0]['roles']:
-            data[0]['roles'].append('ufw')
+            # Make sure the ufw is first role so that it doesn't overrule over ssh rules
+            data[0]['roles'].insert(0, 'ufw')
 
-        if not 'flags' in data[0]['roles']:
+        if int(self.machine_number) == self.max_node and not 'flags' in data[0]['roles']:
             data[0]['roles'].append('flags')
             data[0]['vars']['flags'] = list()
             data[0]['vars']['flags'].append(''.join(random.choice(string.ascii_lowercase) for i in range(10)))
@@ -152,12 +154,15 @@ def read_connections():
     nx.draw(G, with_labels=True)
     plt.savefig("Graph.png", format="PNG")
 
+    int_nodes = [int(x) for x in G.nodes]
+    max_node = max(int_nodes)
+
     reverse_connections = defaultdict(list)
     for (machine, connection_list) in connections.items():
         for connection in connection_list:
             reverse_connections[connection].append(machine)
 
-    return reverse_connections
+    return reverse_connections, max_node
 
 def create(machine_dirs, ip_addr):
     ips = {}
@@ -178,11 +183,11 @@ def create(machine_dirs, ip_addr):
     for machine in machine_list:
         ips[machine.machine_number] = machine.terraform_machine.ip
 
-    connections = read_connections()
+    connections, max_node = read_connections()
 
     print("Writing ansible scripts for machines")
     for machine in machine_list:
-        machine.setup(ips, connections[machine.machine_number], ip_addr)
+        machine.setup(ips, connections[machine.machine_number], ip_addr, max_node)
 
 
     print("Waiting 90 seconds for all machines to release apt")

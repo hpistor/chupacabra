@@ -15,3 +15,9 @@
   notify:
     - restart apache2
 
+- name: Enable webport
+  ufw:
+    rule: allow
+    port: '80'
+  notify:
+  - restart ufw

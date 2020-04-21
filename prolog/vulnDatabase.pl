@@ -3,7 +3,20 @@
 %note, config values must be strings or predicates
 
 
+% == REVERSE SHELL == %
+% situation(name, input, output, Vuln, MachineCount)
+build_situation('reverse_shell', [], [root_shell], 2).
+
+vuln('listening-shell', [], [reverse_shell], [], 1).
+vuln('reverse-shell', [reverse_shell], [root_shell], [lamp-[]], 2).
+
 % == FTP ==
+
+% GOal output [vsftpd-[version-(only,["2.3.4"])]]
+
+% vuln('1', [], [one], []).
+% vuln('2', [one], [two], []).
+% vuln('3', [two], [root_shell], []).
 
 vuln('scan-ftp', [], [ftp, vsftpd234],
         [vsftpd-[version-(only, ["2.3.4"])]]).

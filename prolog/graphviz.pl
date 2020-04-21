@@ -11,7 +11,7 @@ generatePNGFromLattice(LatticeDir, (_, Vulns)) :-
 	generatePNGFromDot(Str, DotFilename).
 
 generatePNGFromDot(String, File) :-
-    format(atom(FileGv), "~s.gv", [File]),
+	format(atom(FileGv), "~s.gv", [File]),
 	open(FileGv, write, Stream),
 	writeln(Stream, "strict digraph \"Vulnerability Lattice\" {"),
 	write(Stream, String),
