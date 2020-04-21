@@ -73,43 +73,46 @@ reverseListInListStep([H | T], Build, Final) :-
 last(X,Y) :-
     append(_,[X],Y).
 
-buildSituationStep([], Final, Final).
-buildSituationStep([(A, B, C) | T], Build, Final) :-
-    buildSituationStep(T, [(A, B, C) | Build], Final).
 
-buildSituation([]).
-buildSituation([(_, Vuln) | T]) :-
-    buildSituationStep(Vuln, [], L),
-    last((_, Last, Output), L),
-    L = [(Input, _, _) | _],
-    assertz(situation(Last, Input, Output, L, 1)),
-    buildSituation(T).
 
-buildMultipleSituationStep([], Final, Final).
-buildMultipleSituationStep([(A, B, C, D) | T], Build, Final) :-
-    buildMultipleSituationStep(T, [(A, B, C, D) | Build], Final).
-
-buildMultipleSituation([]).
-buildMultipleSituation([H | T]) :-
-    buildMultipleSituationStep(H, [], L),
-    last((_, Last, Output, MachineNum), L),
-    L = [(Input, _, _, _) | _],
-    assertz(situation(Last, Input, Output, L, MachineNum)),
-    buildMultipleSituation(T).
+% buildMultipleSituation([]).
+% buildMultipleSituation([H | T]) :-
+%     print(1),
+%     buildMultipleSituationStep(H, [], L),
+%     last((_, Last, Output, MachineNum), L),
+%     L = [(Input, _, _, _) | _],
+%     assertz(situation(Last, Input, Output, L, MachineNum)),
+%     buildMultipleSituation(T).
 
 
 
 buildNewSituations([]).
 buildNewSituations([(_, Input, Output, Machines) | T]) :-
-    setof(Vulns, achieveGoalMultiple(Output, Input, Machines, Vulns, _), Paths),
-    reverseListInList(Paths, RPaths),
-    buildMultipleSituation(RPaths),
+    setof((Configs, Vulns), achieveGoalMultiple(Output, Input, Machines, Vulns, Configs), Paths),
+    buildSituation(Paths),
     buildNewSituations(T).
+
+
+buildSituationStep([], Final, Final).
+buildSituationStep([(A, B, C, D) | T], Build, Final) :-
+    buildSituationStep(T, [(A, B, C, D) | Build], Final).
+
+buildSituation([]).
+buildSituation([(Config, Vuln) | T]) :-
+    buildSituationStep(Vuln, [], L),
+    reverse(L, RL),
+    last((_, Last, Output, MachineNum), RL),
+    RL = [(Input, _, _, _) | _],
+    assertz(situation(Last, Input, Output, RL, Config, MachineNum)),
+    buildSituation(T).
+
 
 assertSituations() :-
     % 1 machine situations
-    setof((Configs, Vulns), achieveGoal([root_shell], [], [], Configs, Vulns), AllVulnPaths),
-    buildSituation(AllVulnPaths),
+    setof((Configs, Vulns), achieveGoalMultiple([root_shell], [], 1, Vulns, Configs), Paths),
+    buildSituation(Paths),
+
+
 
     % multiple machine situations
     findall((SituationName, Input, Output, NumMachines), build_situation(SituationName, Input, Output, NumMachines), SituationsToBuild),
@@ -158,14 +161,25 @@ createMachineRanges(MachineCount, ListOfListofConnections) :-
 
 createPermutationSituation(RangeDir, RangeId, MachineCount, (PermutationId, Permutation)) :-
     format("Creating permutation ~s in range ~s~n", [PermutationId, RangeId]),
+    print(1),
+    nl, 
+    print(RangeDir), nl, print(PermutationId), nl, nl,
     format(atom(LatticeDir), "~s/~s", [RangeDir, PermutationId]), nl,
+    print(1),
     make_directory_path(LatticeDir),
+    print(2),
     format(atom(PermutationTerraformScript), "~s/terraform.py", [LatticeDir]),
+    print(3),
     format(atom(LatticeProvisionScript), "~s/provision.sh", [LatticeDir]),
+    print(4),
     absolute_file_name("./provision.sh", ProvisionScript),
+    print(5),
     absolute_file_name("./terraform.py", TerraformScript),
+    print(6),
     link_file(ProvisionScript, LatticeProvisionScript, symbolic),
+    print(7),
     link_file(TerraformScript, PermutationTerraformScript, symbolic),
+    print(8),
     createMachinesSituation(LatticeDir, MachineCount, (PermutationId, Permutation)).
 
 createPermutation(RangeDir, RangeId, MachineCount, (PermutationId, Permutation)) :-
@@ -184,15 +198,87 @@ testprint([H | T]) :-
     print(H), nl, nl, testprint(T).
 
 assignLatticesSituation(MachineCount, FinalLattices) :-
-    setof((Desc, Initial, Output, Vulns, NumOfMachines), situation(Desc, Initial, Output, Vulns, NumOfMachines), AllSituations),
-    assignLatticesSituationStep(0, MachineCount, AllSituations, [], FinalLattices).
+    print(5),
+    setof((Desc, Initial, Output, Vulns, Configs, NumOfMachines), situation(Desc, Initial, Output, Vulns, Configs, NumOfMachines), AllSituations),
+    assignLatticesSituationStep(0, MachineCount, AllSituations, AllSituations, [], FinalLattices).
 
-assignLatticesSituationStep(Machine, Machine, _, FinalLattices, FinalLattices).
 
-assignLatticesSituationStep(CurrentMachine, MachineCount, Situations, AssignedLattices, FinalLattices) :-
-    random_member((Desc, Input, Output, Vulns, NumOfMachines), Situations),
-    print(Desc), nl, nl, halt(0).
+assignLatticesSituationStep(Machine, Machine, _, _, FinalLattices, FinalLattices).
 
+
+assignLatticesSituationStep(CurrentMachine, MachineCount, [(_, _, _, _, _, NumOfMachines)], AllSituations, AssignedLattices, FinalLattices) :-
+    print(1),
+    NextMachine is CurrentMachine + NumOfMachines,
+    print(2),
+    NextMachine >= MachineCount,
+    print(3),
+    assignLatticesSituationStep(CurrentMachine, MachineCount, AllSituations, AllSituations, AssignedLattices, FinalLattices).
+
+
+assignLatticesSituationStep(CurrentMachine, MachineCount, [], AllSituations, AssignedLattices, FinalLattices) :-
+    assignLatticesSituationStep(CurrentMachine, MachineCount, AllSituations, AllSituations, AssignedLattices, FinalLattices).
+
+
+assignLatticesSituationStep(CurrentMachine, MachineCount, CurrentSituations, AllSituations, AssignedLattices, FinalLattices) :-
+    print(4),
+    random_member((Name, Input, Output, Vulns, Configs, NumOfMachines), CurrentSituations),
+    splitMultipleMachine(Vulns, Configs, NumOfMachines, CurrentMachine, RealizedLattices),
+    append(RealizedLattices, AssignedLattices, ReturnLattices),
+    NextMachine is CurrentMachine + NumOfMachines,
+    NextMachine =< MachineCount,
+    delete(CurrentSituations, (Name, Input, Output, Vulns, Configs, NumOfMachines), NextSituations),
+    assignLatticesSituationStep(NextMachine, MachineCount, NextSituations, AllSituations, ReturnLattices, FinalLattices).
+
+
+splitMultipleMachine(Vulns, Configs, 1, CurrentMachine, [RealizedLattice]) :-
+    realizeLatticeConfigsFromParams([(Configs, Vulns)], [paramPasswordLength-5], (CurrentMachine, RealizedLattice)).
+
+
+splitMultipleMachine(Vulns, Configs, NumOfMachines, CurrentMachine, FinalLattice) :-
+    splitMultipleMachineStep(Vulns, Configs, 1, CurrentMachine, NumOfMachines, [], FinalLattice).
+
+splitMultipleMachineStep(_, _, CurrentMachine, _, NumOfMachines, FinalLattice, FinalLattice) :-
+    CurrentMachine > NumOfMachines.
+
+splitMultipleMachineStep(Vulns, Configs, CurrentMachine, CurrentMachineOverall, NumOfMachines, BuildLattice, FinalLattice) :-
+    collectConfigsForCurrentMachine(Vulns, CurrentMachine, ConfigsForCurrentMachine),
+    flatten(ConfigsForCurrentMachine, MachineConfig),
+    collectVulnsForCurrentMachine(Vulns, CurrentMachine, VulnsForCurrentMachine),
+    realizeLatticeConfigsFromParams([(MachineConfig, VulnsForCurrentMachine)], [paramPasswordLength-5], RealizedLattice),
+    NextMachine is CurrentMachine + 1,
+    NextMachineOverall is CurrentMachineOverall + 1,
+    splitMultipleMachineStep(Vulns, Configs, NextMachine, NextMachineOverall, NumOfMachines, [(CurrentMachineOverall, RealizedLattice) | BuildLattice], FinalLattice).
+    % splitMultipleMachineStep(T, Configs, CurrentMachine, NumOfMachines, BuildLattice, FinalLattice).
+
+collectVulnsForCurrentMachine(Vulns, CurrentMachine, VulnsForCurrentMachine) :-
+    collectVulnsForCurrentMachineStep(Vulns, CurrentMachine, [], VulnsForCurrentMachine).
+
+collectVulnsForCurrentMachineStep([], _, FinalVulns, FinalVulns).
+
+collectVulnsForCurrentMachineStep([Vuln | T], CurrentMachine, BuildVulns, FinalVulns) :-
+    Vuln = (_, _, _, CurrentMachine),
+    collectVulnsForCurrentMachineStep(T, CurrentMachine, [ Vuln | BuildVulns], FinalVulns).
+
+collectVulnsForCurrentMachineStep([(_, _, _, Machine) | T], CurrentMachine, BuildVulns, FinalVulns) :-
+    Machine \= CurrentMachine,
+    collectVulnsForCurrentMachineStep(T, CurrentMachine, BuildVulns, FinalVulns).
+
+collectConfigsForCurrentMachine(Vulns, CurrentMachine, ConfigsForCurrentMachine) :-
+    collectConfigsForCurrentMachineStep(Vulns, CurrentMachine, [], ConfigsForCurrentMachine).
+
+collectConfigsForCurrentMachineStep([], _, FinalConfigs, FinalConfigs).
+
+collectConfigsForCurrentMachineStep([(Input, Name, Output, CurrentMachine) | T], CurrentMachine, BuildConfigs, FinalConfigs) :-
+    vuln(Name, Input, Output, Config, _, CurrentMachine),
+    collectConfigsForCurrentMachineStep(T, CurrentMachine, [ Config | BuildConfigs], FinalConfigs).
+
+collectConfigsForCurrentMachineStep([(_, _, _, Machine) | T], CurrentMachine, BuildConfigs, FinalConfigs) :-
+    Machine \= CurrentMachine,
+    collectConfigsForCurrentMachineStep(T, CurrentMachine, BuildConfigs, FinalConfigs).
+
+
+
+    
 
 
 
@@ -239,10 +325,13 @@ writeListToStream(Stream, List) :- member(Element, List),
                    fail.
 
 createMachinesSituation(LatticeDir, MachineCount, (PermutationId, Permutation)) :-
+    print(6),
     assignLatticesSituation(MachineCount, FinalLattices), !,
-    outputLattices(LatticeDir, FinalLattices, PermutationId),
-    format(atom(ConnectionListFile), "~s/connections.txt", [LatticeDir]),
-    writeListToFile(Permutation, ConnectionListFile).
+    print(FinalLattices), nl, halt(0).
+
+    % outputLattices(LatticeDir, FinalLattices, PermutationId),
+    % format(atom(ConnectionListFile), "~s/connections.txt", [LatticeDir]),
+    % writeListToFile(Permutation, ConnectionListFile).
 
 createMachines(LatticeDir, MachineCount, (PermutationId, Permutation)) :-
     assignLattices(MachineCount, FinalLattices), !,
@@ -323,15 +412,17 @@ achieveGoal([Goal|Goals], InitialState, StartingConfigs, AcceptedConfigs, [(Inpu
 achieveGoalMultiple(Goal, Initial, Machines, FinalVuln, FinalConfig) :-
     achieveGoalMultipleStep(Goal, Initial, Machines, [], FinalVuln, [], FinalConfig).
 
-achieveGoalMultipleStep([], _, 1, FinalVuln, FinalVuln, FinalConfig, FinalConfig).
+achieveGoalMultipleStep([], _, 1, FinalVuln, FinalVuln, BuildConfig, FinalConfig) :-
+    flatten(BuildConfig, FinalConfig).
+
 achieveGoalMultipleStep([Goal | Goals], Initial, CurrentMachine, BuildVuln, FinalVuln, BuildConfig, FinalConfig) :-
-    vuln(Desc, Input, Output, Configs, Machine),
-    Machine =< CurrentMachine,
+    vuln(Desc, Input, Output, Configs, SrcMachine, CurrentMachine),
+    SrcMachine =< CurrentMachine,
     member(Goal, Output),
     subtract(Input, Initial, NewInput),
     union(NewInput, Goals, NewGoals),
     union(Initial, Output, NewState),
-    achieveGoalMultipleStep(NewGoals, NewState, Machine, [(Input, Desc, Output, Machine) | BuildVuln], FinalVuln, [Configs | BuildConfig], FinalConfig).
+    achieveGoalMultipleStep(NewGoals, NewState, SrcMachine, [(Input, Desc, Output, CurrentMachine) | BuildVuln], FinalVuln, [Configs | BuildConfig], FinalConfig).
 
 tprint([]).
 
