@@ -5,9 +5,31 @@ graphAllVulns(FileName) :-
 	formatDotVulns(AllVulns, Str),
 	generatePNGFromDot(Str, FileName), !.
 
-generatePNGFromLattice(LatticeDir, (_, Vulns)) :-
-	formatDotVulns(Vulns, Str),
+generatePNGFromLatticeWithNum(LatticeDir, (Configs, Vulns)) :-
+	formatVulnsForGraphviz(Vulns, Final),
+	print(2),
+	formatDotVulns(Final, Str),
+	print(3),
 	format(atom(DotFilename), "~s/lattice", [LatticeDir]),
+	print(4),
+	generatePNGFromDot(Str, DotFilename),
+	print(5).
+
+
+formatVulnsForGraphviz(Vulns, Final) :-
+	formatVulnsForGraphvizStep(Vulns, [], Final).
+
+formatVulnsForGraphvizStep([], FinalPath, FinalPath).
+
+formatVulnsForGraphvizStep([(Input, Name, Output, _) | T], BuildPath, FinalPath) :-
+	formatVulnsForGraphvizStep(T, [(Input, Name, Output) | BuildPath], FinalPath).
+
+generatePNGFromLattice(LatticeDir, (_, Vulns)) :-
+	print(1), 
+	formatDotVulns(Vulns, Str),
+	print(2), 
+	format(atom(DotFilename), "~s/lattice", [LatticeDir]),
+	print(3), 
 	generatePNGFromDot(Str, DotFilename).
 
 generatePNGFromDot(String, File) :-

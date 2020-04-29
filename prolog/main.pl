@@ -15,15 +15,6 @@ main :-
 main :-
     halt(1).
 
-% Measure performace of predicate
-parseArgs([Time|Rest]) :-
-    Time=time,
-    performance(Rest).
-% Used for graphAllVulns
-parseArgs([Pred, Filename]) :-
-    current_predicate(Pred/1),
-    Run=..[Pred, Filename],
-    call(Run).
 % Used for createRangeFromIGS
 parseArgs([Pred|Rest]) :-
     argsToTerm(Rest, Goal, Initial, Params),
@@ -32,14 +23,13 @@ parseArgs([Pred|Rest]) :-
     call(Run).
 
 parseArgs([Pred | Rest]) :-
-    argsToTerm(Rest, MachineCount, ConnectionsLists),
-    current_predicate(Pred/2),
-    Run=..[Pred, MachineCount, ConnectionsLists],
+    argsToTerm(Rest, MachineCount),
+    current_predicate(Pred/1),
+    Run=..[Pred, MachineCount],
     call(Run).
 
-argsToTerm([ArgsMachine, ArgsConnectionsLists], MachineCount, ConnectionsLists) :-
-    term_to_atom(MachineCount, ArgsMachine),
-    term_to_atom(ConnectionsLists, ArgsConnectionsLists).
+argsToTerm([ArgsMachine], MachineCount) :-
+    term_to_atom(MachineCount, ArgsMachine).
 
 
 argsToTerm([ArgsGoal, ArgsInitial, ArgsParams], Goal, Initial, Params) :-

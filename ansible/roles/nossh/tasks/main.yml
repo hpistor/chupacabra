@@ -1,0 +1,8 @@
+---
+- name: Blacklist ssh port
+  ufw:
+    rule: deny
+    port: 22
+  notify:
+  - restart ufw
+

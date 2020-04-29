@@ -42,8 +42,12 @@ class TerraformMachine(threading.Thread):
         while "null" in stdout:
             _, stdout, _ = tf.refresh()
             time.sleep(1)
-        ip = re.search(r'"(.*?)"', stdout)[0]
-        self.ip = ip[1:-1]
+        ips = re.findall(r'"(.*?)"', stdout)
+        for ip in ips:
+            if '::' not in ip:
+                print(ip)
+                self.ip = ip
+                break
 
     def destroy(self):
         print(f"Destroying machine #{self.machine_number}")
@@ -66,27 +70,6 @@ class Machine(threading.Thread):
         self.write_connections_to_playbook()
         self.write_provisioning_script()
 
-        seconds_slept = 0
-        total_seconds = 90
-        # printProgressBar(0, total_seconds, prefix = f'[{self.machine_number}]: ', suffix = f'/{total_seconds} seconds', length = 45)
-
-        # while seconds_slept < total_seconds:
-        #     time.sleep(5)
-        #     seconds_slept += 5 
-            # Update Progress Bar
-            # printProgressBar(seconds_slept, total_seconds, prefix =f'[{self.machine_number}]: ', suffix = f'/{total_seconds} seconds', length = 45)
-
-        # print(f"[{self.machine_number}] Provisioning")
-        # with open(f"./machine_{self.machine_number}/provision.log", 'w') as f:
-        #     subprocess.Popen(f"bash ./machine_{self.machine_number}/provision.sh", shell = True, stdout = f, stderr=f, cwd=f"./machine_{self.machine_number}")
-
-
-        # if self.method == "create":
-        #     self.create()
-        # if self.method == "refresh":
-        #     self.refresh()
-        # if self.method == "destroy":
-        #     self.destroy()
 
     def setup(self, machine_ip_connection_list, connections, ip_addr, max_node):
         self.whitelisted_machines = connections
@@ -107,7 +90,10 @@ class Machine(threading.Thread):
             command = command.replace("{{IP}}", self.terraform_machine.ip)
             f.write(command)
 
+
     def write_connections_to_playbook(self):
+        print(self.machine_ip_connection_list)
+        print(self.whitelisted_machines)
         connections_to_ips = [self.machine_ip_connection_list[connection] for connection in self.whitelisted_machines]
         if self.machine_number == "0":
             print(f"Whitelisting {self.host_ip} on machine zero")
@@ -116,19 +102,23 @@ class Machine(threading.Thread):
         data = None
         with open(f'machine_{self.machine_number}/playbook.yml') as f: 
             data = yaml.load(f)
-        data[0]['vars']['ufw'] = dict()
-        data[0]['vars']['ufw']['ips'] = connections_to_ips
-        if not 'ufw' in data[0]['roles']:
-            # Make sure the ufw is first role so that it doesn't overrule over ssh rules
-            data[0]['roles'].insert(0, 'ufw')
+        if self.machine_number != "0":
+            data[0]['vars']['ufw'] = dict()
+            data[0]['vars']['ufw']['ips'] = connections_to_ips
+
+        # Reorder
+        data[0]['roles'] = list(set(data[0]['roles']))
+
 
         if int(self.machine_number) == self.max_node and not 'flags' in data[0]['roles']:
             data[0]['roles'].append('flags')
             data[0]['vars']['flags'] = list()
             data[0]['vars']['flags'].append(''.join(random.choice(string.ascii_lowercase) for i in range(10)))
 
-        if not 'reboot' in data[0]['roles'] and self.machine_number == "0":
-            data[0]['roles'].append('reboot')
+        if not 'ufw' in data[0]['roles'] and self.machine_number != "0":
+            # Make sure the ufw is first role so that it doesn't overrule over ssh rules
+            data[0]['roles'].insert(0, 'ufw')
+
         with open(f'machine_{self.machine_number}/playbook.yml', 'w') as f:
             yaml.dump(data, f, default_flow_style=False)
 
@@ -137,15 +127,18 @@ class Machine(threading.Thread):
 
 
 def read_connections():
-    connections = {}
+    connections = defaultdict(list)
     with open("connections.txt") as f:
         content = f.read().splitlines()
         for line in content:
-            src, dest = line.split(",", 1)
-            dest = dest[1:-1]
-            dest_machines = dest.split(',')
-            connections[src] = dest_machines
+            src, dest = line.split("-")
+            dest_int = int(dest) - 1
+            src_int = int(src) - 1
+            real_dest = str(dest_int)
+            real_src = str(src_int)
+            connections[real_src].append(real_dest)
 
+    
     G = nx.DiGraph()
     for src, destinations in connections.items():
         for dest in destinations:
@@ -155,12 +148,14 @@ def read_connections():
     plt.savefig("Graph.png", format="PNG")
 
     int_nodes = [int(x) for x in G.nodes]
-    max_node = max(int_nodes)
+    max_node = max(int_nodes) - 1
 
     reverse_connections = defaultdict(list)
+
     for (machine, connection_list) in connections.items():
         for connection in connection_list:
             reverse_connections[connection].append(machine)
+    reverse_connections['0'] = []
 
     return reverse_connections, max_node
 
@@ -251,12 +246,7 @@ if __name__ == '__main__':
 
     method = sys.argv[1]
     if method == "create":
-        if len(sys.argv) != 3:
-            usage = "python terraform.py create [ip_address]"
-            print(usage)
-        else:
-            ip_addr = sys.argv[2]
-            create(machine_dirs, ip_addr)
+        create(machine_dirs, "192.168.0.1")
 
     if method == "destroy":
         destroy(machine_dirs)

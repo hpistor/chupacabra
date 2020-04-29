@@ -1,10 +1,12 @@
 ---
 - name: Enable root ssh
   become: true
-  when: openssh.allowrootlogin == "Yes"
+  when: 
+    - "'allowrootlogin' in openssh"
+    - openssh.allowrootlogin == true | default 
   lineinfile:
     path: /etc/ssh/sshd_config
-    regexp: '^PermitRootLogin without-password'
+    regexp: '^#PermitRootLogin prohibit-password'
     line: 'PermitRootLogin yes'
   notify:
   - restart ssh

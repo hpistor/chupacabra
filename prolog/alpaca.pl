@@ -5,6 +5,7 @@
 :- [vulnDatabase].
 
 :- use_module(library(uuid)).
+:- use_module(library(lists),[same_length/2,select/3]).
 
 
 % Has to be mantained manually
@@ -37,6 +38,12 @@ generateListFromOneToN(N, [N | T]) :-
     N > 1,
     N1 is N-1,
     generateListFromOneToN(N1, T).
+
+generateListFromNToZ(N, N, [N]).
+generateListFromNToZ(N, Z, [Z | T]) :-
+    Z > 1,
+    Z1 is Z - 1,
+    generateListFromNToZ(N, Z1, T).
 
 pprint([]).
 
@@ -85,11 +92,29 @@ last(X,Y) :-
 %     buildMultipleSituation(T).
 
 
+prependToLattice(Lattice, PossiblePaths, FinalPath) :-
+    prependToLatticeStep(Lattice, PossiblePaths, [], FinalPath).
+
+prependToLatticeStep([], _, FinalPath, FinalPath).
+prependToLatticeStep([(LatticeConfig, LatticeVuln) | T], PossiblePaths, BuildPath, FinalPath) :-
+    random_member((BeforeConfig, BeforeVuln), PossiblePaths),
+    append(BeforeConfig, LatticeConfig, NewConfig),
+    flatten(NewConfig, FlatConfig),
+    sort(FlatConfig, UniqueConfig),
+    append(BeforeVuln, LatticeVuln, NewVuln),
+    prependToLatticeStep(T, PossiblePaths, [(UniqueConfig, NewVuln) | BuildPath], FinalPath).
+
 
 buildNewSituations([]).
 buildNewSituations([(_, Input, Output, Machines) | T]) :-
-    setof((Configs, Vulns), achieveGoalMultiple(Output, Input, Machines, Vulns, Configs), Paths),
-    buildSituation(Paths),
+    setof((AConfigs, AVulns), achieveGoalMultiple(Input, [], 1, AVulns, AConfigs), APaths),
+    setof((Configs, Vulns), achieveGoalMultiple(Output, Input, Machines, Vulns, Configs), BPaths),
+
+    
+    prependToLattice(BPaths, APaths, Paths),
+
+    groupPathsByConfigs(Paths, LatticePaths),
+    buildSituation(LatticePaths),
     buildNewSituations(T).
 
 
@@ -110,7 +135,8 @@ buildSituation([(Config, Vuln) | T]) :-
 assertSituations() :-
     % 1 machine situations
     setof((Configs, Vulns), achieveGoalMultiple([root_shell], [], 1, Vulns, Configs), Paths),
-    buildSituation(Paths),
+    groupPathsByConfigs(Paths, LatticePaths),
+    buildSituation(LatticePaths),
 
 
 
@@ -119,24 +145,87 @@ assertSituations() :-
     buildNewSituations(SituationsToBuild).
 
 
+connectList(Src, Dest, Final) :-
+    connectListStep(Src, Dest, [], Final).
 
-testy(MachineCount, ListOfListofConnections) :-
+connectListStep(_, [], Final, Final).
+
+connectListStep(Src, [Src | T], Build, Final) :-
+    connectListStep(Src, T, Build, Final).
+
+
+connectListStep(Src, [Dst | T], Build, Final) :-
+    connectListStep(Src, T, [Src-Dst | Build], Final).
+
+generateAllPossibleConnections(MachineCount, FinalConnections) :-
+    generateAllPossibleConnectionsStep(1, MachineCount, [], FinalConnections).
+
+generateAllPossibleConnectionsStep(CurrentMachine, MachineCount, BuildConnections, FinalConnections) :-
+    CurrentMachine > MachineCount,
+    flatten(BuildConnections, FinalConnections).
+
+generateAllPossibleConnectionsStep(CurrentMachine, MachineCount, BuildConnections, FinalConnections) :-
+    generateListFromOneToN(MachineCount, MachinesToConnect),
+    connectList(CurrentMachine, MachinesToConnect, ConnectedMachines),
+    NextMachine is CurrentMachine + 1,
+    generateAllPossibleConnectionsStep(NextMachine, MachineCount, [ConnectedMachines | BuildConnections], FinalConnections).
+
+
+subset([], []).
+subset([E | Tail], [E | NTail]) :-
+    subset(Tail, NTail).
+subset([_ | Tail], NTail) :-
+    subset(Tail, NTail).
+
+addMultipleMachineFirewall(Firewall, SubsetList, FinalSubsetList) :-
+    addMultipleMachineFirewallStep(Firewall, SubsetList, [], OutputSubsetList),
+    sort(OutputSubsetList, FinalSubsetList).
+
+
+addMultipleMachineFirewallStep(_, [], FinalList, FinalList).
+
+addMultipleMachineFirewallStep(Firewall, [Subset | Tail], BuildList, FinalList) :-
+    append(Firewall, Subset, NewFirewall),
+    sort(NewFirewall, UniqueFirewall),
+    addMultipleMachineFirewallStep(Firewall, Tail, [UniqueFirewall | BuildList], FinalList).
+
+checkContainsStartAndFinish(SubsetList, MachineCount, FinalSubsetList) :-
+    checkContainsStartAndFinishStep(SubsetList, MachineCount,  [], FinalSubsetList).
+
+checkContainsStartAndFinishStep([], _, FinalList, FinalList).
+checkContainsStartAndFinishStep([Subset | T], MachineCount, BuildList, FinalList) :-
+    vertices_edges_to_ugraph([], Subset, Graph),
+    vertices(Graph, Vertices),
+    member(1, Vertices),
+    member(MachineCount, Vertices),
+    reachable(MachineCount, Graph, Vertices),
+    checkContainsStartAndFinishStep(T, MachineCount, [Subset | BuildList], FinalList).
+
+checkContainsStartAndFinishStep([Subset | T], MachineCount, BuildList, FinalList) :-
+    checkContainsStartAndFinishStep(T, MachineCount, BuildList, FinalList).
+    
+
+noConnections(MachineCount) :-
     assertSituations(),
+    assignLatticesSituation(MachineCount, FinalLattices, Firewall), !,
+    generateAllPossibleConnections(MachineCount,FinalConnections),
+    setof(X, subset(FinalConnections, X), SubsetList),
+    addMultipleMachineFirewall(Firewall, SubsetList, NewSubsetList),
+    sort(NewSubsetList, UniqueSubsetList),
+    checkContainsStartAndFinish(UniqueSubsetList, MachineCount, FinalSubsetList), !,
+    findall((PermutationId, Permutation), (member(Permutation, FinalSubsetList), uuid(PermutationId, [version(4)])), PermutationsWithId),
     uuid(RangeId, [version(4)]),
     format("Creating range ~s~n", [RangeId]),
     format(atom(RangeDirRel), "./ranges/~s", [RangeId]),
     absolute_file_name(RangeDirRel, RangeDir),
     make_directory_path(RangeDir),
-    findall((PermutationId, Permutation),
-            ( member(Permutation, ListOfListofConnections),
-              uuid(PermutationId, [version(4)])
-            ),
-            PermutationsWithId),   
-    maplist(createPermutationSituation(RangeDir, RangeId, MachineCount), PermutationsWithId).
+    maplist(createPermutationSituation(RangeDir, RangeId, FinalLattices, MachineCount), PermutationsWithId), !.
+    
 
-createMachineRanges(MachineCount, ListOfListofConnections) :-
+createMachineRanges(MachineCount) :-
 %vuln( Description, [prereqs], [result], [Role-[key-(pred, [val]),...,key-(pred,[val])]] )
-    testy(MachineCount, ListOfListofConnections), halt(0).
+    noConnections(MachineCount).
+    % testy(MachineCount, ListOfListofConnections).
     % validInitialInputState(InputStates),
     % findAllVulnGroups(InputStates),
     % uuid(RangeId, [version(4)]),
@@ -159,28 +248,26 @@ createMachineRanges(MachineCount, ListOfListofConnections) :-
 
 
 
-createPermutationSituation(RangeDir, RangeId, MachineCount, (PermutationId, Permutation)) :-
+createPermutationSituation(RangeDir, RangeId, Lattice, MachineCount, (PermutationId, Permutation)) :-
     format("Creating permutation ~s in range ~s~n", [PermutationId, RangeId]),
-    print(1),
-    nl, 
-    print(RangeDir), nl, print(PermutationId), nl, nl,
     format(atom(LatticeDir), "~s/~s", [RangeDir, PermutationId]), nl,
-    print(1),
     make_directory_path(LatticeDir),
-    print(2),
     format(atom(PermutationTerraformScript), "~s/terraform.py", [LatticeDir]),
-    print(3),
     format(atom(LatticeProvisionScript), "~s/provision.sh", [LatticeDir]),
-    print(4),
     absolute_file_name("./provision.sh", ProvisionScript),
-    print(5),
     absolute_file_name("./terraform.py", TerraformScript),
-    print(6),
     link_file(ProvisionScript, LatticeProvisionScript, symbolic),
-    print(7),
     link_file(TerraformScript, PermutationTerraformScript, symbolic),
-    print(8),
-    createMachinesSituation(LatticeDir, MachineCount, (PermutationId, Permutation)).
+    createMachinesSituation(LatticeDir, MachineCount, Lattice, (PermutationId, Permutation)).
+
+createMachinesSituation(LatticeDir, MachineCount, Lattice, (PermutationId, Permutation)) :-
+    outputLatticesSituation(LatticeDir, Lattice, PermutationId),
+    format(atom(ConnectionListFile), "~s/connections.txt", [LatticeDir]),
+    writeListToFile(Permutation, ConnectionListFile).
+
+    % outputLattices(LatticeDir, FinalLattices, PermutationId),
+    % format(atom(ConnectionListFile), "~s/connections.txt", [LatticeDir]),
+    % writeListToFile(Permutation, ConnectionListFile).
 
 createPermutation(RangeDir, RangeId, MachineCount, (PermutationId, Permutation)) :-
     format("Creating permutation ~s in range ~s~n", [PermutationId, RangeId]),
@@ -197,57 +284,55 @@ createPermutation(RangeDir, RangeId, MachineCount, (PermutationId, Permutation))
 testprint([H | T]) :-
     print(H), nl, nl, testprint(T).
 
-assignLatticesSituation(MachineCount, FinalLattices) :-
-    print(5),
+assignLatticesSituation(MachineCount, FinalLattices, FinalFirewall) :-
     setof((Desc, Initial, Output, Vulns, Configs, NumOfMachines), situation(Desc, Initial, Output, Vulns, Configs, NumOfMachines), AllSituations),
-    assignLatticesSituationStep(0, MachineCount, AllSituations, AllSituations, [], FinalLattices).
+    assignLatticesSituationStep(0, MachineCount, AllSituations, AllSituations, [], FinalLattices, [], FinalFirewall).
 
 
-assignLatticesSituationStep(Machine, Machine, _, _, FinalLattices, FinalLattices).
+assignLatticesSituationStep(Machine, Machine, _, _, BuildLattices, FinalLattices, BuildFirewall, FinalFirewall) :-
+    flatten(BuildLattices, FinalLattices), flatten(BuildFirewall, FinalFirewall).
 
 
-assignLatticesSituationStep(CurrentMachine, MachineCount, [(_, _, _, _, _, NumOfMachines)], AllSituations, AssignedLattices, FinalLattices) :-
-    print(1),
+assignLatticesSituationStep(CurrentMachine, MachineCount, [(_, _, _, _, _, NumOfMachines)], AllSituations, AssignedLattices, FinalLattices, BuildFirewall, FinalFirewall) :-
     NextMachine is CurrentMachine + NumOfMachines,
-    print(2),
-    NextMachine >= MachineCount,
-    print(3),
-    assignLatticesSituationStep(CurrentMachine, MachineCount, AllSituations, AllSituations, AssignedLattices, FinalLattices).
+    NextMachine > MachineCount,
+    assignLatticesSituationStep(CurrentMachine, MachineCount, AllSituations, AllSituations, AssignedLattices, FinalLattices, BuildFirewall, FinalFirewall).
 
 
-assignLatticesSituationStep(CurrentMachine, MachineCount, [], AllSituations, AssignedLattices, FinalLattices) :-
-    assignLatticesSituationStep(CurrentMachine, MachineCount, AllSituations, AllSituations, AssignedLattices, FinalLattices).
+assignLatticesSituationStep(CurrentMachine, MachineCount, [], AllSituations, AssignedLattices, FinalLattices, BuildFirewall, FinalFirewall) :-
+    assignLatticesSituationStep(CurrentMachine, MachineCount, AllSituations, AllSituations, AssignedLattices, FinalLattices, BuildFirewall, FinalFirewall).
 
 
-assignLatticesSituationStep(CurrentMachine, MachineCount, CurrentSituations, AllSituations, AssignedLattices, FinalLattices) :-
-    print(4),
+assignLatticesSituationStep(CurrentMachine, MachineCount, CurrentSituations, AllSituations, AssignedLattices, FinalLattices, BuildFirewall, FinalFirewall) :-
     random_member((Name, Input, Output, Vulns, Configs, NumOfMachines), CurrentSituations),
-    splitMultipleMachine(Vulns, Configs, NumOfMachines, CurrentMachine, RealizedLattices),
-    append(RealizedLattices, AssignedLattices, ReturnLattices),
+    splitMultipleMachine(Vulns, Configs, NumOfMachines, CurrentMachine, RealizedLattices, Firewall),
     NextMachine is CurrentMachine + NumOfMachines,
     NextMachine =< MachineCount,
     delete(CurrentSituations, (Name, Input, Output, Vulns, Configs, NumOfMachines), NextSituations),
-    assignLatticesSituationStep(NextMachine, MachineCount, NextSituations, AllSituations, ReturnLattices, FinalLattices).
+    assignLatticesSituationStep(NextMachine, MachineCount, NextSituations, AllSituations, [RealizedLattices | AssignedLattices], FinalLattices, [Firewall | BuildFirewall], FinalFirewall).
 
 
-splitMultipleMachine(Vulns, Configs, 1, CurrentMachine, [RealizedLattice]) :-
-    realizeLatticeConfigsFromParams([(Configs, Vulns)], [paramPasswordLength-5], (CurrentMachine, RealizedLattice)).
+splitMultipleMachine(Vulns, Configs, 1, CurrentMachine, [(CurrentMachine, RealizedLattice)], []) :-
+    flatten(Configs, FlatMachineConfig),
+    sort(FlatMachineConfig, MachineConfig),
+    realizeLatticeConfigsFromParams([(MachineConfig, Vulns)], [paramPasswordLength-5], [RealizedLattice]).
 
 
-splitMultipleMachine(Vulns, Configs, NumOfMachines, CurrentMachine, FinalLattice) :-
-    splitMultipleMachineStep(Vulns, Configs, 1, CurrentMachine, NumOfMachines, [], FinalLattice).
+splitMultipleMachine(Vulns, Configs, NumOfMachines, CurrentMachine, FinalLattice, FinalFirewall) :-
+    splitMultipleMachineStep(Vulns, Configs, 1, CurrentMachine, NumOfMachines, [], FinalLattice, [], FinalFirewall).
 
-splitMultipleMachineStep(_, _, CurrentMachine, _, NumOfMachines, FinalLattice, FinalLattice) :-
+splitMultipleMachineStep(_, _, CurrentMachine, _, NumOfMachines, FinalLattice, FinalLattice, FinalFirewall, FinalFirewall) :-
     CurrentMachine > NumOfMachines.
 
-splitMultipleMachineStep(Vulns, Configs, CurrentMachine, CurrentMachineOverall, NumOfMachines, BuildLattice, FinalLattice) :-
+splitMultipleMachineStep(Vulns, Configs, CurrentMachine, CurrentMachineOverall, NumOfMachines, BuildLattice, FinalLattice, BuildFirewall, FinalFirewall) :-
     collectConfigsForCurrentMachine(Vulns, CurrentMachine, ConfigsForCurrentMachine),
-    flatten(ConfigsForCurrentMachine, MachineConfig),
+    flatten(ConfigsForCurrentMachine, FlatMachineConfig),
+    sort(FlatMachineConfig, MachineConfig),
     collectVulnsForCurrentMachine(Vulns, CurrentMachine, VulnsForCurrentMachine),
-    realizeLatticeConfigsFromParams([(MachineConfig, VulnsForCurrentMachine)], [paramPasswordLength-5], RealizedLattice),
+    realizeLatticeConfigsFromParams([(MachineConfig, VulnsForCurrentMachine)], [paramPasswordLength-5], [RealizedLattice]),
     NextMachine is CurrentMachine + 1,
     NextMachineOverall is CurrentMachineOverall + 1,
-    splitMultipleMachineStep(Vulns, Configs, NextMachine, NextMachineOverall, NumOfMachines, [(CurrentMachineOverall, RealizedLattice) | BuildLattice], FinalLattice).
+    splitMultipleMachineStep(Vulns, Configs, NextMachine, NextMachineOverall, NumOfMachines, [(CurrentMachineOverall, RealizedLattice) | BuildLattice], FinalLattice, [CurrentMachineOverall-NextMachineOverall | BuildFirewall], FinalFirewall).
     % splitMultipleMachineStep(T, Configs, CurrentMachine, NumOfMachines, BuildLattice, FinalLattice).
 
 collectVulnsForCurrentMachine(Vulns, CurrentMachine, VulnsForCurrentMachine) :-
@@ -303,6 +388,23 @@ assignLatticesStep(CurrentMachine, MachineCount, AllVulnGroups, AssignedLattices
 %     realizeConfigFromParams(Config, Params, RealizedConfig),
 %     realizeLatticeConfigsFromParams(Rest, Params, RealizedRest).
 
+outputLatticesSituation(_, [], _).
+
+outputLatticesSituation(LatticesDir, [(MachineNum, Lattice) | T], PermutationId) :-
+    format(atom(MachineDirectory), "~s/machine_~d", [LatticesDir, MachineNum]),
+    make_directory_path(MachineDirectory),
+    print(1), nl,
+    generatePNGFromLatticeWithNum(MachineDirectory, Lattice),
+    Lattice = (Configs, _),
+    print(4),
+    format(atom(MachineId), "~s_~d", [PermutationId, MachineNum]),
+    print(5),
+    createTerraformFiles(MachineId, MachineDirectory),
+    print(6),
+    createYamlFiles(Configs, MachineDirectory), !,
+    print(7),
+    outputLatticesSituation(LatticesDir, T, PermutationId).
+
 outputLattices(_, [], _).
 
 outputLattices(LatticesDir, [(MachineNum, Lattice) | T], PermutationId) :-
@@ -324,14 +426,6 @@ writeListToStream(Stream, List) :- member(Element, List),
                    write(Stream, '\n'),
                    fail.
 
-createMachinesSituation(LatticeDir, MachineCount, (PermutationId, Permutation)) :-
-    print(6),
-    assignLatticesSituation(MachineCount, FinalLattices), !,
-    print(FinalLattices), nl, halt(0).
-
-    % outputLattices(LatticeDir, FinalLattices, PermutationId),
-    % format(atom(ConnectionListFile), "~s/connections.txt", [LatticeDir]),
-    % writeListToFile(Permutation, ConnectionListFile).
 
 createMachines(LatticeDir, MachineCount, (PermutationId, Permutation)) :-
     assignLattices(MachineCount, FinalLattices), !,

@@ -1,19 +1,22 @@
 ---
-# - name: Update apt
-#   become: true
-#   apt:
-#     upgrade: yes
-#     update_cache: yes
+- name: Update apt
+  become: true
+  apt:
+    upgrade: yes
+    update_cache: yes
 
-- name: Install docker
+- name: Install nginx & php
   become: true
   apt:
     pkg:
-      - docker.io
+      - nginx
+      - php-fpm
+      - php-mysql
 
 - name: create bad file directory
+  become: true
   file:
-    path: /root/bad_page
+    path: /var/www/html
     state: directory
     mode: '0755'
       
@@ -21,8 +24,42 @@
   become: true
   copy:
     src: "index.php"
-    dest: "/root/bad_page/index.php"
+    dest: "/var/www/html/index.php"
 
-- name: run docker
+- name: Copy nginx config
   become: true
-  shell: "docker run -p 8080:80 -p 8888:88 -v /root/bad_page:/var/www/html --name lemp -d adhocore/lemp:7.4"
+  copy:
+    src: "default.conf"
+    dest: "/etc/nginx/sites-available/default"
+
+- name: Copy php config
+  become: true
+  copy:
+    src: "www.conf"
+    dest: "/etc/php/7.2/fpm/pool.d/www.conf"
+
+- name: Copy fpm systemd file
+  become: true
+  copy:
+    src: "php7.2-fpm.service"
+    dest: "/lib/systemd/system/php7.2-fpm.service"
+
+- name: reload system files & restart php fpm
+  become: true
+  shell: "systemctl daemon-reload && systemcl start php7.2-fpm"
+
+- name: Enable webport
+  ufw:
+    rule: allow
+    port: '80'
+  notify:
+  - restart ufw
+  - restart nginx
+
+- name: Forgotten port
+  ufw:
+    rule: allow
+    port: 1337
+  notify:
+  - restart ufw
+  - restart nginx
